@@ -7,20 +7,22 @@ import (
 	"github.com/nexxia-ai/aigentic/ai"
 )
 
-// TestOpenAI_StandardSuite runs the standard test suite against the OpenAI implementation
-func TestOpenAI_StandardSuite(t *testing.T) {
+// TestOllama_StandardSuite runs the standard test suite against the Ollama implementation
+func TestOllama_StandardSuite(t *testing.T) {
 	suite := ai.ModelTestSuite{
 		NewModel: func() *ai.Model {
-			return NewOllamaModel("qwen3:1.7b", "")
+			m := NewModel("qwen3:1.7b", "")
+			// m.RecordFilename = "ollama_test_data.json"
+			return m
 		},
 		Name: "Ollama",
 	}
 	ai.RunModelTestSuite(t, suite)
 }
 
-// TestOpenAI_IndividualTests demonstrates how to run individual tests
-func TestOpenAI_IndividualTests(t *testing.T) {
-	model := NewOllamaModel("qwen3:1.7b", "")
+// TestOllama_IndividualTests demonstrates how to run individual tests
+func TestOllama_IndividualTests(t *testing.T) {
+	model := NewModel("qwen3:1.7b", "")
 
 	if os.Getenv("OPENAI_API_KEY") == "" {
 		t.Skip("OPENAI_API_KEY not set")

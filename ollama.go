@@ -114,8 +114,8 @@ func (e StatusError) Error() string {
 	return fmt.Sprintf("status: %s, code: %d, error: %s", e.Status, e.StatusCode, e.ErrorMessage)
 }
 
-// NewOllamaModel creates a new Model instance configured for Ollama
-func NewOllamaModel(modelName string, apiKey string) *ai.Model {
+// NewModel creates a new Model instance configured for Ollama
+func NewModel(modelName string, apiKey string) *ai.Model {
 	if apiKey == "" {
 		apiKey = os.Getenv("OLLAMA_API_KEY")
 	}
