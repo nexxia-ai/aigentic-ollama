@@ -1,0 +1,2 @@
+# aigentic-ollama
+Aigentic Ollama 
