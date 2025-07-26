@@ -1,3 +1,7 @@
+//go:build integration
+
+// run this with: go test -tags=integration -run ^TestOllama_StandardSuite
+
 package ollama
 
 import (
@@ -5,11 +9,12 @@ import (
 	"testing"
 
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/tests/integration"
 )
 
 // TestOllama_StandardSuite runs the standard test suite against the Ollama implementation
 func TestOllama_StandardSuite(t *testing.T) {
-	suite := ai.ModelTestSuite{
+	suite := integration.ModelTestSuite{
 		NewModel: func() *ai.Model {
 			m := NewModel("qwen3:1.7b", "")
 			// m.RecordFilename = "ollama_test_data.json"
@@ -17,7 +22,7 @@ func TestOllama_StandardSuite(t *testing.T) {
 		},
 		Name: "Ollama",
 	}
-	ai.RunModelTestSuite(t, suite)
+	integration.RunModelTestSuite(t, suite)
 }
 
 // TestOllama_IndividualTests demonstrates how to run individual tests
@@ -29,18 +34,18 @@ func TestOllama_IndividualTests(t *testing.T) {
 	}
 
 	t.Run("GenerateSimple", func(t *testing.T) {
-		ai.TestGenerateSimple(t, model)
+		integration.TestGenerateSimple(t, model)
 	})
 
 	t.Run("ProcessImage", func(t *testing.T) {
-		ai.TestProcessImage(t, model)
+		integration.TestProcessImage(t, model)
 	})
 
 	t.Run("ProcessAttachments", func(t *testing.T) {
-		ai.TestProcessAttachments(t, model)
+		integration.TestProcessAttachments(t, model)
 	})
 
 	t.Run("GenerateContentWithTools", func(t *testing.T) {
-		ai.TestGenerateContentWithTools(t, model)
+		integration.TestGenerateContentWithTools(t, model)
 	})
 }
