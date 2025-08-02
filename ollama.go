@@ -126,6 +126,7 @@ func NewModel(modelName string, apiKey string) *ai.Model {
 		BaseURL:   "http://localhost:11434",
 	}
 	model.SetGenerateFunc(ollamaGenerate)
+	model.SetStreamingFunc(ollamaStream)
 
 	return model
 }
@@ -292,6 +293,332 @@ func ollamaGenerate(ctx context.Context, model *ai.Model, messages []ai.Message,
 
 	// Convert tool calls if any
 	for _, tc := range apiRespMsg.ToolCalls {
+		args, err := json.Marshal(tc.Function.Arguments)
+		if err != nil {
+			return ai.AIMessage{}, fmt.Errorf("failed to marshal tool arguments: %w", err)
+		}
+
+		finalMessage.ToolCalls = append(finalMessage.ToolCalls, ai.ToolCall{
+			ID:     strconv.Itoa(tc.Function.Index),
+			Type:   tc.Type,
+			Name:   tc.Function.Name,
+			Args:   string(args),
+			Result: "",
+		})
+	}
+
+	return finalMessage, nil
+}
+
+// ollamaStream is the streaming function for Ollama models
+func ollamaStream(ctx context.Context, model *ai.Model, messages []ai.Message, tools []ai.Tool, chunkFunction func(ai.AIMessage) error) (ai.AIMessage, error) {
+	// Process messages with aggregation for Ollama's constraints
+	var systemMessage *OllamaMessage
+	var userMessage *OllamaMessage
+	var imageMessages []OllamaMessage
+	var conversationMessages []OllamaMessage
+
+	for _, msg := range messages {
+		switch r := msg.(type) {
+		case ai.SystemMessage:
+			// Aggregate system messages
+			if systemMessage == nil {
+				systemMessage = &OllamaMessage{
+					Role:    "system",
+					Content: r.Content,
+				}
+			} else {
+				systemMessage.Content += "\n" + r.Content
+			}
+
+		case ai.UserMessage:
+			// Aggregate user messages
+			if userMessage == nil {
+				userMessage = &OllamaMessage{
+					Role:    "user",
+					Content: r.Content,
+				}
+			} else {
+				userMessage.Content += "\n" + r.Content
+			}
+
+		case ai.ResourceMessage:
+			// Handle based on resource type
+			switch r.Type {
+			case "image":
+				// Images become separate messages
+				if r.MIMEType != "" && r.Body != nil {
+					imageData := base64.StdEncoding.EncodeToString(r.Body.([]byte))
+					imageMessages = append(imageMessages, OllamaMessage{
+						Role:   "user",
+						Images: []string{imageData},
+					})
+				}
+
+			default:
+				// All other resource types embedded in user message with demarcation
+				if userMessage == nil {
+					userMessage = &OllamaMessage{Role: "user"}
+				}
+
+				// Build file demarcation
+				fileMarker := "<file"
+				if r.Name != "" {
+					fileMarker += fmt.Sprintf(` name="%s"`, r.Name)
+				}
+				if r.MIMEType != "" {
+					fileMarker += fmt.Sprintf(` type="%s"`, r.MIMEType)
+				}
+				fileMarker += ">"
+
+				// Add file content
+				var fileContent string
+				if r.Body != nil {
+					switch r.MIMEType {
+					case "text/plain", "text/markdown", "text/csv", "application/json", "text/html":
+						// Embed text content directly
+						if textContent, ok := r.Body.([]byte); ok {
+							fileContent = string(textContent)
+						}
+					default:
+						// For binary files, add a reference
+						fileContent = fmt.Sprintf("[Binary file: %s]", r.MIMEType)
+					}
+				}
+
+				// Add description if available
+				if r.Description != "" {
+					fileContent = r.Description + "\n\n" + fileContent
+				}
+
+				// Add to user message with demarcation
+				userMessage.Content += fileMarker + fileContent + "</file>\n\n"
+			}
+
+		case ai.AIMessage:
+			// Handle AI messages normally
+			ollamaMsg := OllamaMessage{
+				Role:    "assistant",
+				Content: r.OriginalContent,
+			}
+
+			// Convert tool calls if any
+			for _, toolCall := range r.ToolCalls {
+				ollamaMsg.ToolCalls = append(ollamaMsg.ToolCalls, OllamaToolCall{
+					ID:   toolCall.ID,
+					Type: toolCall.Type,
+					Function: OllamaFunction{
+						Name:      toolCall.Name,
+						Arguments: map[string]interface{}{},
+						Index:     0, // Will be set properly if needed
+					},
+				})
+			}
+
+			conversationMessages = append(conversationMessages, ollamaMsg)
+
+		case ai.ToolMessage:
+			// Handle tool messages
+			conversationMessages = append(conversationMessages, OllamaMessage{
+				Role:    "tool",
+				Content: r.Content,
+			})
+
+		default:
+			panic(fmt.Sprintf("unsupported message type: %T - check that message is not a pointer", r))
+		}
+	}
+
+	// Assemble final message list
+	var ollamaMessages []OllamaMessage
+
+	// Add system message if exists
+	if systemMessage != nil {
+		ollamaMessages = append(ollamaMessages, *systemMessage)
+	}
+
+	// Add user message if exists
+	if userMessage != nil {
+		ollamaMessages = append(ollamaMessages, *userMessage)
+	}
+
+	// Add all image messages
+	ollamaMessages = append(ollamaMessages, imageMessages...)
+
+	// Add remaining conversation messages
+	ollamaMessages = append(ollamaMessages, conversationMessages...)
+
+	// Convert our tool format to Ollama's format
+	ollamaTools := make([]OllamaTool, len(tools))
+	if len(tools) > 0 {
+		for i, tool := range tools {
+			ollamaTools[i] = OllamaTool{
+				Type:     "function",
+				Function: toToolFunction(tool),
+			}
+		}
+	}
+
+	// Make streaming call to Ollama
+	options := ollamaModelToOptions(model)
+	finalMessage, err := ollamaStreamREST(ctx, model, ollamaMessages, ollamaTools, options, chunkFunction)
+	if err != nil {
+		return ai.AIMessage{}, fmt.Errorf("failed to call ollama stream: %w", err)
+	}
+
+	return finalMessage, nil
+}
+
+// ollamaStreamREST makes a streaming call to the Ollama API
+func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMessage, tools []OllamaTool, options *OllamaOptions, chunkFunction func(ai.AIMessage) error) (ai.AIMessage, error) {
+	req := &OllamaChatRequest{
+		Model:    model.ModelName,
+		Messages: messages,
+		Stream:   true, // Enable streaming
+	}
+
+	// Add tools to the request if provided
+	if len(tools) > 0 {
+		req.Tools = tools
+	}
+
+	// Set options if provided
+	if options != nil {
+		req.Options = options
+	}
+
+	// Marshal request to JSON
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return ai.AIMessage{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Create HTTP request
+	url := model.BaseURL + "/api/chat"
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
+	if err != nil {
+		return ai.AIMessage{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	if model.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+model.APIKey)
+	}
+
+	// Execute request
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return ai.AIMessage{}, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check for HTTP errors first
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return ai.AIMessage{}, &StatusError{
+			StatusCode:   resp.StatusCode,
+			Status:       resp.Status,
+			ErrorMessage: string(respBody),
+		}
+	}
+
+	// Handle streaming response
+	var accumulatedContent string
+	var accumulatedThinkContent string
+	var accumulatedToolCalls []OllamaToolCall
+	var finalMessage ai.AIMessage
+	scanner := bufio.NewScanner(resp.Body)
+
+	for scanner.Scan() {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return ai.AIMessage{}, ctx.Err()
+		default:
+		}
+
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		var chunk OllamaChatResponse
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			return ai.AIMessage{}, fmt.Errorf("failed to unmarshal response chunk: %w", err)
+		}
+
+		// Initialize final message with first chunk
+		if finalMessage.Role == "" {
+			finalMessage.Role = ai.AssistantRole
+		}
+
+		// Extract think tags from this chunk's content
+		chunkContent, chunkThinkPart := ai.ExtractThinkTags(chunk.Message.Content)
+
+		// Accumulate cleaned content (without think tags)
+		if chunkContent != "" {
+			accumulatedContent += chunkContent
+		}
+
+		// Accumulate think content
+		if chunkThinkPart != "" {
+			accumulatedThinkContent += chunkThinkPart
+		}
+
+		// Accumulate tool calls
+		if chunk.Message.ToolCalls != nil {
+			accumulatedToolCalls = append(accumulatedToolCalls, chunk.Message.ToolCalls...)
+		}
+
+		// Create chunk message for callback with only the new cleaned content (no think tags)
+		chunkMessage := ai.AIMessage{
+			Role:            ai.AssistantRole,
+			Content:         chunkContent, // Only the new cleaned content for this chunk
+			Think:           chunkThinkPart,
+			OriginalContent: chunk.Message.Content, // Keep original for reference
+		}
+
+		// Convert only the new tool calls for this chunk
+		if chunk.Message.ToolCalls != nil {
+			for _, tc := range chunk.Message.ToolCalls {
+				args, err := json.Marshal(tc.Function.Arguments)
+				if err != nil {
+					return ai.AIMessage{}, fmt.Errorf("failed to marshal tool arguments: %w", err)
+				}
+
+				chunkMessage.ToolCalls = append(chunkMessage.ToolCalls, ai.ToolCall{
+					ID:     strconv.Itoa(tc.Function.Index),
+					Type:   tc.Type,
+					Name:   tc.Function.Name,
+					Args:   string(args),
+					Result: "",
+				})
+			}
+		}
+
+		// Call the chunk function
+		if err := chunkFunction(chunkMessage); err != nil {
+			return ai.AIMessage{}, fmt.Errorf("chunk function error: %w", err)
+		}
+
+		// Check if done
+		if chunk.Done {
+			break
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return ai.AIMessage{}, fmt.Errorf("error reading response: %w", err)
+	}
+
+	// Set final message with accumulated cleaned content and think content
+	finalMessage.Content = accumulatedContent
+	finalMessage.Think = accumulatedThinkContent
+	finalMessage.OriginalContent = accumulatedContent + accumulatedThinkContent
+
+	// Convert final tool calls
+	for _, tc := range accumulatedToolCalls {
 		args, err := json.Marshal(tc.Function.Arguments)
 		if err != nil {
 			return ai.AIMessage{}, fmt.Errorf("failed to marshal tool arguments: %w", err)

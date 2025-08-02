@@ -17,6 +17,12 @@ func TestOllama_AgentSuite(t *testing.T) {
 			return NewModel("qwen3:4b", "")
 		},
 		Name:      "Ollama",
-		SkipTests: []string{}, // Ollama supports all test types
+		SkipTests: []string{"MultiAgentChain"}, // qwen3:4b is not strong enough for this test
 	})
+}
+
+func TestOllama_MultiAgentChain(t *testing.T) {
+	// qwen3:14b is still not strong enough for this test either
+	model := NewModel("qwen3:14b", "")
+	aigentic.TestMultiAgentChain(t, model)
 }

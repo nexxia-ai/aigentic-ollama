@@ -18,28 +18,23 @@ func TestOllama_ModelSuite(t *testing.T) {
 			// m.RecordFilename = "ollama_test_data.json"
 			return m
 		},
-		Name: "Ollama",
+		SkipTests: []string{"ProcessImage"},
+		Name:      "Ollama",
 	}
 	ai.RunModelTestSuite(t, suite)
 }
 
-// TestOllama_IndividualTests demonstrates how to run individual tests
-func TestOllama_IndividualTests(t *testing.T) {
+func TestOllama_ProcessImage(t *testing.T) {
 	model := NewModel("qwen3:4b", "")
+	ai.TestProcessImage(t, model)
+}
 
-	t.Run("GenerateSimple", func(t *testing.T) {
-		ai.TestGenerateSimple(t, model)
-	})
+func TestOllama_StreamingBasic(t *testing.T) {
+	model := NewModel("qwen3:4b", "")
+	ai.TestStreamingBasic(t, model)
+}
 
-	t.Run("ProcessImage", func(t *testing.T) {
-		ai.TestProcessImage(t, model)
-	})
-
-	t.Run("ProcessAttachments", func(t *testing.T) {
-		ai.TestProcessAttachments(t, model)
-	})
-
-	t.Run("GenerateContentWithTools", func(t *testing.T) {
-		ai.TestGenerateContentWithTools(t, model)
-	})
+func TestOllama_StreamingWithTools(t *testing.T) {
+	model := NewModel("qwen3:4b", "")
+	ai.TestStreamingWithTools(t, model)
 }
