@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/nexxia-ai/aigentic/ai"
 )
@@ -112,6 +113,33 @@ type StatusError struct {
 
 func (e StatusError) Error() string {
 	return fmt.Sprintf("status: %s, code: %d, error: %s", e.Status, e.StatusCode, e.ErrorMessage)
+}
+
+// isRetryableError checks if an error should trigger a retry
+func isRetryableError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	errStr := err.Error()
+
+	// Check for specific HTTP status codes that are retryable
+	if strings.Contains(errStr, "status: 502") ||
+		strings.Contains(errStr, "status: 503") ||
+		strings.Contains(errStr, "status: 504") ||
+		strings.Contains(errStr, "status: 429") {
+		return fmt.Errorf("%w: %v", ai.ErrTemporary, err)
+	}
+
+	// Check for network-related errors
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "network") ||
+		strings.Contains(errStr, "temporary") {
+		return fmt.Errorf("%w: %v", ai.ErrTemporary, err)
+	}
+
+	return err
 }
 
 // NewModel creates a new Model instance configured for Ollama
@@ -509,18 +537,19 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return ai.AIMessage{}, fmt.Errorf("failed to execute request: %w", err)
+		return ai.AIMessage{}, isRetryableError(err)
 	}
 	defer resp.Body.Close()
 
 	// Check for HTTP errors first
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return ai.AIMessage{}, &StatusError{
+		errStatus := &StatusError{
 			StatusCode:   resp.StatusCode,
 			Status:       resp.Status,
 			ErrorMessage: string(respBody),
 		}
+		return ai.AIMessage{}, isRetryableError(errStatus)
 	}
 
 	// Handle streaming response
@@ -712,18 +741,19 @@ func ollamaREST(ctx context.Context, model *ai.Model, messages []OllamaMessage, 
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return OllamaMessage{}, fmt.Errorf("failed to execute request: %w", err)
+		return OllamaMessage{}, isRetryableError(err)
 	}
 	defer resp.Body.Close()
 
 	// Check for HTTP errors first
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return OllamaMessage{}, &StatusError{
+		errStatus := &StatusError{
 			StatusCode:   resp.StatusCode,
 			Status:       resp.Status,
 			ErrorMessage: string(respBody),
 		}
+		return OllamaMessage{}, isRetryableError(errStatus)
 	}
 
 	// Handle streaming response
