@@ -2,7 +2,7 @@ module github.com/nexxia-ai/aigentic-ollama
 
 go 1.24.3
 
-require github.com/nexxia-ai/aigentic v0.3.0
+require github.com/nexxia-ai/aigentic v0.3.1-0.20250809201858-1551cf555848
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

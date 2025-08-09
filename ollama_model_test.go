@@ -28,13 +28,3 @@ func TestOllama_ProcessImage(t *testing.T) {
 	model := NewModel("qwen3:4b", "")
 	ai.TestProcessImage(t, model)
 }
-
-func TestOllama_StreamingBasic(t *testing.T) {
-	model := NewModel("qwen3:4b", "")
-	ai.TestStreamingBasic(t, model)
-}
-
-func TestOllama_StreamingWithTools(t *testing.T) {
-	model := NewModel("qwen3:4b", "")
-	ai.TestStreamingWithTools(t, model)
-}
