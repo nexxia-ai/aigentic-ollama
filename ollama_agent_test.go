@@ -24,13 +24,19 @@ func TestOllama_AgentSuite(t *testing.T) {
 		SkipTests: []string{
 			"MultiAgentChain",
 			"TeamCoordination",
+			"MemoryPersistence",
 			"FileAttachments"}, // qwen3:4b is not strong enough for this test
 	})
 }
 
+func TestOllama_MemoryPersistence(t *testing.T) {
+	model := NewModel("qwen3:8b", "")
+	aigentic.TestMemoryPersistence(t, model)
+}
+
 func TestOllama_MultiAgentChain(t *testing.T) {
 	// qwen3:14b is still not strong enough for this test either
-	model := NewModel(gptModel, "")
+	model := NewModel("qwen3:14b", "")
 	aigentic.TestMultiAgentChain(t, model)
 }
 

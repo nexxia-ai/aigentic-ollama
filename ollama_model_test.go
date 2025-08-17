@@ -25,6 +25,6 @@ func TestOllama_ModelSuite(t *testing.T) {
 }
 
 func TestOllama_ProcessImage(t *testing.T) {
-	model := NewModel("qwen3:4b", "")
+	model := NewModel("gemma3", "")
 	ai.TestProcessImage(t, model)
 }
