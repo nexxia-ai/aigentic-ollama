@@ -248,7 +248,7 @@ func ollamaGenerate(ctx context.Context, model *ai.Model, messages []ai.Message,
 			// Handle AI messages normally
 			ollamaMsg := OllamaMessage{
 				Role:    "assistant",
-				Content: r.OriginalContent,
+				Content: r.Content,
 			}
 
 			// Convert tool calls if any
@@ -317,7 +317,7 @@ func ollamaGenerate(ctx context.Context, model *ai.Model, messages []ai.Message,
 
 	// Convert Ollama response to AIMessage
 	content, thinkPart := ai.ExtractThinkTags(apiRespMsg.Content)
-	finalMessage := ai.AIMessage{Role: ai.AssistantRole, Content: content, Think: thinkPart, OriginalContent: apiRespMsg.Content}
+	finalMessage := ai.AIMessage{Role: ai.AssistantRole, Content: content, Think: thinkPart}
 
 	// Convert tool calls if any
 	for _, tc := range apiRespMsg.ToolCalls {
@@ -427,7 +427,7 @@ func ollamaStream(ctx context.Context, model *ai.Model, messages []ai.Message, t
 			// Handle AI messages normally
 			ollamaMsg := OllamaMessage{
 				Role:    "assistant",
-				Content: r.OriginalContent,
+				Content: r.Content,
 			}
 
 			// Convert tool calls if any
@@ -602,10 +602,10 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 
 		// Create chunk message for callback with only the new cleaned content (no think tags)
 		chunkMessage := ai.AIMessage{
-			Role:            ai.AssistantRole,
-			Content:         chunkContent, // Only the new cleaned content for this chunk
-			Think:           chunkThinkPart,
-			OriginalContent: chunk.Message.Content, // Keep original for reference
+			Role:    ai.AssistantRole,
+			Content: chunkContent, // Only the new cleaned content for this chunk
+			Think:   chunkThinkPart,
+			// OriginalContent: chunk.Message.Content, // Keep original for reference
 		}
 
 		// Convert only the new tool calls for this chunk
@@ -644,7 +644,7 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 	// Set final message with accumulated cleaned content and think content
 	finalMessage.Content = accumulatedContent
 	finalMessage.Think = accumulatedThinkContent
-	finalMessage.OriginalContent = accumulatedContent + accumulatedThinkContent
+	// finalMessage.OriginalContent = accumulatedContent + accumulatedThinkContent
 
 	// Convert final tool calls
 	for _, tc := range accumulatedToolCalls {
