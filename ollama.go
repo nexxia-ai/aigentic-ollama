@@ -142,8 +142,36 @@ func isRetryableError(err error) error {
 	return err
 }
 
+func init() {
+	ai.RegisterModel("ollama", "qwen3:1.7b", ai.ModelInfo{
+		DisplayName: "Qwen3 1.7B",
+		Family:      "qwen",
+		NewModel:    NewModel,
+	})
+	ai.RegisterModel("ollama", "qwen3:4b", ai.ModelInfo{
+		DisplayName: "Qwen3 4B",
+		Family:      "qwen",
+		NewModel:    NewModel,
+	})
+	ai.RegisterModel("ollama", "qwen3:8b", ai.ModelInfo{
+		DisplayName: "Qwen3 8B",
+		Family:      "qwen",
+		NewModel:    NewModel,
+	})
+	ai.RegisterModel("ollama", "qwen3:14b", ai.ModelInfo{
+		DisplayName: "Qwen3 14B",
+		Family:      "qwen",
+		NewModel:    NewModel,
+	})
+	ai.RegisterModel("ollama", "gemma3:12", ai.ModelInfo{
+		DisplayName: "Gemma3 12B",
+		Family:      "gemma3",
+		NewModel:    NewModel,
+	})
+}
+
 // NewModel creates a new Model instance configured for Ollama
-func NewModel(modelName string, apiKey string) *ai.Model {
+func NewModel(modelName string, apiKey string, baseURL ...string) *ai.Model {
 	if apiKey == "" {
 		apiKey = os.Getenv("OLLAMA_API_KEY")
 	}
