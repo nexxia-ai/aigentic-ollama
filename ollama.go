@@ -354,8 +354,13 @@ func ollamaGenerate(ctx context.Context, model *ai.Model, messages []ai.Message,
 			return ai.AIMessage{}, fmt.Errorf("failed to marshal tool arguments: %w", err)
 		}
 
+		toolCallID := tc.ID
+		if toolCallID == "" {
+			toolCallID = strconv.Itoa(tc.Function.Index)
+		}
+
 		finalMessage.ToolCalls = append(finalMessage.ToolCalls, ai.ToolCall{
-			ID:     strconv.Itoa(tc.Function.Index),
+			ID:     toolCallID,
 			Type:   tc.Type,
 			Name:   tc.Function.Name,
 			Args:   string(args),
@@ -699,8 +704,13 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 					return ai.AIMessage{}, fmt.Errorf("failed to marshal tool arguments: %w", err)
 				}
 
+				toolCallID := tc.ID
+				if toolCallID == "" {
+					toolCallID = strconv.Itoa(tc.Function.Index)
+				}
+
 				chunkMessage.ToolCalls = append(chunkMessage.ToolCalls, ai.ToolCall{
-					ID:     strconv.Itoa(tc.Function.Index),
+					ID:     toolCallID,
 					Type:   tc.Type,
 					Name:   tc.Function.Name,
 					Args:   string(args),
@@ -709,7 +719,7 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 			}
 		}
 
-		// Call the chunk function only if there's content or think to emit
+		// Call the chunk function only if there's content, think, or tool calls to emit
 		if chunkMessage.Content != "" || chunkMessage.Think != "" || len(chunkMessage.ToolCalls) > 0 {
 			if err := chunkFunction(chunkMessage); err != nil {
 				return ai.AIMessage{}, fmt.Errorf("chunk function error: %w", err)
@@ -757,8 +767,13 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 			return ai.AIMessage{}, fmt.Errorf("failed to marshal tool arguments: %w", err)
 		}
 
+		toolCallID := tc.ID
+		if toolCallID == "" {
+			toolCallID = strconv.Itoa(tc.Function.Index)
+		}
+
 		finalMessage.ToolCalls = append(finalMessage.ToolCalls, ai.ToolCall{
-			ID:     strconv.Itoa(tc.Function.Index),
+			ID:     toolCallID,
 			Type:   tc.Type,
 			Name:   tc.Function.Name,
 			Args:   string(args),
