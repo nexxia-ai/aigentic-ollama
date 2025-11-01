@@ -2,7 +2,7 @@ module github.com/nexxia-ai/aigentic-ollama
 
 go 1.24.3
 
-require github.com/nexxia-ai/aigentic v0.6.0
+require github.com/nexxia-ai/aigentic v0.8.0
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect

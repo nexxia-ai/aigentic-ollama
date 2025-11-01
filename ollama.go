@@ -525,6 +525,61 @@ func ollamaStream(ctx context.Context, model *ai.Model, messages []ai.Message, t
 	return finalMessage, nil
 }
 
+type streamingThinkParser struct {
+	buffer     string
+	inThinkTag bool
+}
+
+func (p *streamingThinkParser) addChunk(rawChunk string) (contentChunk string, thinkChunk string) {
+	p.buffer += rawChunk
+
+	for {
+		if !p.inThinkTag {
+			startIdx := strings.Index(p.buffer, "<think>")
+			if startIdx == -1 {
+				contentChunk = p.buffer
+				p.buffer = ""
+				return contentChunk, ""
+			}
+
+			if startIdx > 0 {
+				contentChunk = p.buffer[:startIdx]
+				p.buffer = p.buffer[startIdx:]
+				return contentChunk, ""
+			}
+
+			if len(p.buffer) >= len("<think>") {
+				p.inThinkTag = true
+				p.buffer = p.buffer[len("<think>"):]
+				continue
+			}
+
+			return "", ""
+		} else {
+			endIdx := strings.Index(p.buffer, "</think>")
+			if endIdx == -1 {
+				if len(p.buffer) > 0 {
+					thinkChunk = p.buffer
+					p.buffer = ""
+				}
+				return "", thinkChunk
+			}
+
+			thinkChunk = p.buffer[:endIdx]
+			p.buffer = p.buffer[endIdx+len("</think>"):]
+			p.inThinkTag = false
+			return "", thinkChunk
+		}
+	}
+}
+
+func (p *streamingThinkParser) flush() (contentChunk string, thinkChunk string) {
+	if p.inThinkTag {
+		return "", p.buffer
+	}
+	return p.buffer, ""
+}
+
 // ollamaStreamREST makes a streaming call to the Ollama API
 func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMessage, tools []OllamaTool, options *OllamaOptions, chunkFunction func(ai.AIMessage) error) (ai.AIMessage, error) {
 	req := &OllamaChatRequest{
@@ -586,6 +641,7 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 	var accumulatedToolCalls []OllamaToolCall
 	var finalMessage ai.AIMessage
 	scanner := bufio.NewScanner(resp.Body)
+	parser := &streamingThinkParser{}
 
 	for scanner.Scan() {
 		// Check for context cancellation
@@ -610,8 +666,8 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 			finalMessage.Role = ai.AssistantRole
 		}
 
-		// Extract think tags from this chunk's content
-		chunkContent, chunkThinkPart := ai.ExtractThinkTags(chunk.Message.Content)
+		// Parse the chunk content using the stateful parser
+		chunkContent, chunkThinkPart := parser.addChunk(chunk.Message.Content)
 
 		// Accumulate cleaned content (without think tags)
 		if chunkContent != "" {
@@ -631,9 +687,8 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 		// Create chunk message for callback with only the new cleaned content (no think tags)
 		chunkMessage := ai.AIMessage{
 			Role:    ai.AssistantRole,
-			Content: chunkContent, // Only the new cleaned content for this chunk
+			Content: chunkContent,
 			Think:   chunkThinkPart,
-			// OriginalContent: chunk.Message.Content, // Keep original for reference
 		}
 
 		// Convert only the new tool calls for this chunk
@@ -654,14 +709,35 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 			}
 		}
 
-		// Call the chunk function
-		if err := chunkFunction(chunkMessage); err != nil {
-			return ai.AIMessage{}, fmt.Errorf("chunk function error: %w", err)
+		// Call the chunk function only if there's content or think to emit
+		if chunkMessage.Content != "" || chunkMessage.Think != "" || len(chunkMessage.ToolCalls) > 0 {
+			if err := chunkFunction(chunkMessage); err != nil {
+				return ai.AIMessage{}, fmt.Errorf("chunk function error: %w", err)
+			}
 		}
 
 		// Check if done
 		if chunk.Done {
 			break
+		}
+	}
+
+	// Flush any remaining content in the parser buffer
+	flushContent, flushThink := parser.flush()
+	if flushContent != "" {
+		accumulatedContent += flushContent
+	}
+	if flushThink != "" {
+		accumulatedThinkContent += flushThink
+	}
+	if flushContent != "" || flushThink != "" {
+		chunkMessage := ai.AIMessage{
+			Role:    ai.AssistantRole,
+			Content: flushContent,
+			Think:   flushThink,
+		}
+		if err := chunkFunction(chunkMessage); err != nil {
+			return ai.AIMessage{}, fmt.Errorf("chunk function error: %w", err)
 		}
 	}
 
