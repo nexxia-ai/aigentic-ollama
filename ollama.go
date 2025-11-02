@@ -17,14 +17,6 @@ import (
 )
 
 // Ollama API types for native REST calls
-type OllamaChatRequest struct {
-	Model    string          `json:"model"`
-	Messages []OllamaMessage `json:"messages"`
-	Tools    []OllamaTool    `json:"tools,omitempty"`
-	Options  *OllamaOptions  `json:"options,omitempty"`
-	Stream   bool            `json:"stream,omitempty"`
-}
-
 type OllamaMessage struct {
 	Role      string           `json:"role"`
 	Content   string           `json:"content"`
@@ -143,30 +135,40 @@ func isRetryableError(err error) error {
 }
 
 func init() {
-	ai.RegisterModel("ollama", "qwen3:1.7b", ai.ModelInfo{
-		DisplayName: "Qwen3 1.7B",
-		Family:      "qwen",
-		NewModel:    NewModel,
+	ai.RegisterModel(ai.ModelInfo{
+		Provider:   "ollama",
+		Model:      "qwen3:1.7b",
+		Identifier: "Qwen3 1.7B",
+		Family:     "qwen",
+		NewModel:   NewModel,
 	})
-	ai.RegisterModel("ollama", "qwen3:4b", ai.ModelInfo{
-		DisplayName: "Qwen3 4B",
-		Family:      "qwen",
-		NewModel:    NewModel,
+	ai.RegisterModel(ai.ModelInfo{
+		Provider:   "ollama",
+		Model:      "qwen3:4b",
+		Identifier: "Qwen3 4B",
+		Family:     "qwen",
+		NewModel:   NewModel,
 	})
-	ai.RegisterModel("ollama", "qwen3:8b", ai.ModelInfo{
-		DisplayName: "Qwen3 8B",
-		Family:      "qwen",
-		NewModel:    NewModel,
+	ai.RegisterModel(ai.ModelInfo{
+		Provider:   "ollama",
+		Model:      "qwen3:8b",
+		Identifier: "Qwen3 8B",
+		Family:     "qwen",
+		NewModel:   NewModel,
 	})
-	ai.RegisterModel("ollama", "qwen3:14b", ai.ModelInfo{
-		DisplayName: "Qwen3 14B",
-		Family:      "qwen",
-		NewModel:    NewModel,
+	ai.RegisterModel(ai.ModelInfo{
+		Provider:   "ollama",
+		Model:      "qwen3:14b",
+		Identifier: "Qwen3 14B",
+		Family:     "qwen",
+		NewModel:   NewModel,
 	})
-	ai.RegisterModel("ollama", "gemma3:12", ai.ModelInfo{
-		DisplayName: "Gemma3 12B",
-		Family:      "gemma3",
-		NewModel:    NewModel,
+	ai.RegisterModel(ai.ModelInfo{
+		Provider:   "ollama",
+		Model:      "gemma3:12",
+		Identifier: "Gemma3 12B",
+		Family:     "gemma3",
+		NewModel:   NewModel,
 	})
 }
 
@@ -177,9 +179,10 @@ func NewModel(modelName string, apiKey string, baseURL ...string) *ai.Model {
 	}
 
 	model := &ai.Model{
-		ModelName: modelName,
-		APIKey:    apiKey,
-		BaseURL:   "http://localhost:11434",
+		ModelName:  modelName,
+		APIKey:     apiKey,
+		BaseURL:    "http://localhost:11434",
+		Parameters: map[string]any{},
 	}
 	model.SetGenerateFunc(ollamaGenerate)
 	model.SetStreamingFunc(ollamaStream)
@@ -587,23 +590,27 @@ func (p *streamingThinkParser) flush() (contentChunk string, thinkChunk string) 
 
 // ollamaStreamREST makes a streaming call to the Ollama API
 func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMessage, tools []OllamaTool, options *OllamaOptions, chunkFunction func(ai.AIMessage) error) (ai.AIMessage, error) {
-	req := &OllamaChatRequest{
-		Model:    model.ModelName,
-		Messages: messages,
-		Stream:   true, // Enable streaming
-	}
+	req := make(map[string]interface{})
+	req["model"] = model.ModelName
+	req["messages"] = messages
+	req["stream"] = true
 
-	// Add tools to the request if provided
 	if len(tools) > 0 {
-		req.Tools = tools
+		req["tools"] = tools
 	}
 
-	// Set options if provided
 	if options != nil {
-		req.Options = options
+		req["options"] = options
 	}
 
-	// Marshal request to JSON
+	if len(model.Parameters) > 0 {
+		for key, value := range model.Parameters {
+			if _, exists := req[key]; !exists {
+				req[key] = value
+			}
+		}
+	}
+
 	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return ai.AIMessage{}, fmt.Errorf("failed to marshal request: %w", err)
@@ -823,22 +830,26 @@ func ollamaModelToOptions(model *ai.Model) *OllamaOptions {
 
 // ollamaREST makes a single call to the Ollama API
 func ollamaREST(ctx context.Context, model *ai.Model, messages []OllamaMessage, tools []OllamaTool, options *OllamaOptions) (OllamaMessage, error) {
-	req := &OllamaChatRequest{
-		Model:    model.ModelName,
-		Messages: messages,
-	}
+	req := make(map[string]interface{})
+	req["model"] = model.ModelName
+	req["messages"] = messages
 
-	// Add tools to the request if provided
 	if len(tools) > 0 {
-		req.Tools = tools
+		req["tools"] = tools
 	}
 
-	// Set options if provided
 	if options != nil {
-		req.Options = options
+		req["options"] = options
 	}
 
-	// Marshal request to JSON
+	if len(model.Parameters) > 0 {
+		for key, value := range model.Parameters {
+			if _, exists := req[key]; !exists {
+				req[key] = value
+			}
+		}
+	}
+
 	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return OllamaMessage{}, fmt.Errorf("failed to marshal request: %w", err)
