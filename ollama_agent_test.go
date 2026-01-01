@@ -9,6 +9,7 @@ import (
 
 	"github.com/nexxia-ai/aigentic"
 	"github.com/nexxia-ai/aigentic/ai"
+	"github.com/nexxia-ai/aigentic/event"
 )
 
 const (
@@ -65,23 +66,23 @@ Always use thinking tags when solving problems.`,
 		Stream: true,
 	}
 
-	run, err := agent.Start("What is 25 * 37? Show your thinking process in <think> tags.")
+	agentRun, err := agent.Start("What is 25 * 37? Show your thinking process in <think> tags.")
 	if err != nil {
 		t.Fatalf("Failed to start agent: %v", err)
 	}
 
-	var thinkingEvents []*aigentic.ThinkingEvent
-	var contentEvents []*aigentic.ContentEvent
+	var thinkingEvents []*event.ThinkingEvent
+	var contentEvents []*event.ContentEvent
 
-	for event := range run.Next() {
-		switch ev := event.(type) {
-		case *aigentic.ThinkingEvent:
+	for evt := range agentRun.Next() {
+		switch ev := evt.(type) {
+		case *event.ThinkingEvent:
 			t.Logf("ThinkingEvent received: %s", ev.Thought)
 			thinkingEvents = append(thinkingEvents, ev)
-		case *aigentic.ContentEvent:
+		case *event.ContentEvent:
 			t.Logf("ContentEvent received: %s", ev.Content)
 			contentEvents = append(contentEvents, ev)
-		case *aigentic.ErrorEvent:
+		case *event.ErrorEvent:
 			t.Fatalf("ErrorEvent received: %v", ev.Err)
 		}
 	}

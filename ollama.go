@@ -20,6 +20,7 @@ import (
 type OllamaMessage struct {
 	Role      string           `json:"role"`
 	Content   string           `json:"content"`
+	Thinking  string           `json:"thinking,omitempty"`
 	Images    []string         `json:"images,omitempty"`
 	ToolCalls []OllamaToolCall `json:"tool_calls,omitempty"`
 }
@@ -347,7 +348,15 @@ func ollamaGenerate(ctx context.Context, model *ai.Model, messages []ai.Message,
 	}
 
 	// Convert Ollama response to AIMessage
-	content, thinkPart := ai.ExtractThinkTags(apiRespMsg.Content)
+	var thinkPart string
+	content := apiRespMsg.Content
+
+	if apiRespMsg.Thinking != "" {
+		thinkPart = apiRespMsg.Thinking
+	} else {
+		content, thinkPart = ai.ExtractThinkTags(apiRespMsg.Content)
+	}
+
 	finalMessage := ai.AIMessage{Role: ai.AssistantRole, Content: content, Think: thinkPart}
 
 	// Convert tool calls if any
@@ -538,7 +547,7 @@ type streamingThinkParser struct {
 	inThinkTag bool
 }
 
-func (p *streamingThinkParser) addChunk(rawChunk string) (contentChunk string, thinkChunk string) {
+func (p *streamingThinkParser) splitChunks(rawChunk string) (contentChunk string, thinkChunk string) {
 	p.buffer += rawChunk
 
 	for {
@@ -679,7 +688,13 @@ func ollamaStreamREST(ctx context.Context, model *ai.Model, messages []OllamaMes
 		}
 
 		// Parse the chunk content using the stateful parser
-		chunkContent, chunkThinkPart := parser.addChunk(chunk.Message.Content)
+		chunkContent, chunkThinkPart := parser.splitChunks(chunk.Message.Content)
+		// chunkContent, chunkThinkPart := parser.splitChunks(chunk.Message.Content)
+
+		// If thinking field is present, use it (takes precedence over parsed thinking)
+		if chunk.Message.Thinking != "" {
+			chunkThinkPart = chunk.Message.Thinking
+		}
 
 		// Accumulate cleaned content (without think tags)
 		if chunkContent != "" {
@@ -908,6 +923,7 @@ func ollamaREST(ctx context.Context, model *ai.Model, messages []OllamaMessage, 
 
 		// Accumulate content
 		responseMessage.Content += chunk.Message.Content
+		responseMessage.Thinking += chunk.Message.Thinking
 
 		// Accumulate tool calls
 		if chunk.Message.ToolCalls != nil {
