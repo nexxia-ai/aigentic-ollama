@@ -171,6 +171,20 @@ func init() {
 		Family:     "gemma3",
 		NewModel:   NewModel,
 	})
+	ai.RegisterModel(ai.ModelInfo{
+		Provider:   "ollama",
+		Model:      "functiongemma",
+		Identifier: "Function Gemma 270m",
+		Family:     "gemma3",
+		NewModel:   NewModel,
+	})
+	ai.RegisterModel(ai.ModelInfo{
+		Provider:   "ollama",
+		Model:      "nemotron-3-nano",
+		Identifier: "Nemotron 3 Nano 30B",
+		Family:     "nemotron",
+		NewModel:   NewModel,
+	})
 }
 
 // NewModel creates a new Model instance configured for Ollama
